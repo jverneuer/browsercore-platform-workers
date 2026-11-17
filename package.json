@@ -1,6 +1,6 @@
 {
     "name": "@browsercore/platform-workers",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "Cloudflare Workers Platform adapter for the @browsercore stack — browser-identical TLS on Workers via pure-noble crypto, a cloudflare:sockets TCP shim, and DI'd connect.",
     "repository": {
         "type": "git",
