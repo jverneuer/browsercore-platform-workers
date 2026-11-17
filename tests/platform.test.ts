@@ -7,25 +7,25 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { Platform } from "@browsercore/contracts";
+import type { Platform, UdpSocketFactory } from "@browsercore/contracts";
 
 import { createWorkersPlatform } from "../src/platform/index.js";
 import { WorkersCompressionProvider } from "../src/compression/workers-compression.js";
 import { WorkersCryptoProvider } from "../src/crypto/workers-crypto-provider.js";
 import { WorkersEventProvider } from "../src/events/workers-event-provider.js";
 import { WorkersSocket } from "../src/net/workers-net.js";
-import { MissingConnectError, UnsupportedOnWorkersError } from "../src/errors.js";
+import { MissingConnectError } from "../src/errors.js";
 import { createFakeConnect, createFakeHandle, flush } from "./helpers/fake-connect.js";
 
 describe("createWorkersPlatform — defaults", () => {
-    it("fills every Platform field without any options", () => {
+    it("provides every bundle Workers can back, without any options", () => {
         const platform: Platform = createWorkersPlatform();
         expect(platform.network).toBeDefined();
         expect(platform.crypto.provider).toBeInstanceOf(WorkersCryptoProvider);
         expect(platform.compression).toBeInstanceOf(WorkersCompressionProvider);
         expect(platform.events).toBeInstanceOf(WorkersEventProvider);
         expect(platform.telemetry).toBeDefined();
-        expect(platform.time.clock.now()).toBeGreaterThan(0);
+        expect(platform.time.now()).toBeGreaterThan(0);
     });
 
     it("accepts (and reserves) the env bindings object", () => {
@@ -33,9 +33,23 @@ describe("createWorkersPlatform — defaults", () => {
         expect(platform.crypto.provider.randomBytes(4)).toHaveLength(4);
     });
 
-    it("network.udp is the throwing stub (no UDP ⇒ no HTTP/3)", async () => {
+    it("network.udp is ABSENT — optional bundles express 'no UDP on Workers' as omission", () => {
         const platform = createWorkersPlatform();
-        await expect(platform.network.udp.recv()).rejects.toThrow(UnsupportedOnWorkersError);
+        // Absence, not a throwing stub (contracts 0.2.6+): the key is not
+        // merely undefined-valued, it is not present on the object at all.
+        expect("udp" in platform.network).toBe(false);
+        expect(platform.network.udp).toBeUndefined();
+    });
+
+    it("an explicit network.udp override still flows through the seam", () => {
+        const udpFactory: UdpSocketFactory = {
+            // Never dialed — proving injection, not UDP support.
+            connect: async () => {
+                throw new Error("test factory never opens sockets");
+            },
+        };
+        const platform = createWorkersPlatform(undefined, { network: { udp: udpFactory } });
+        expect(platform.network.udp).toBe(udpFactory);
     });
 
     it("network.dns passes hostnames through for edge resolution", async () => {

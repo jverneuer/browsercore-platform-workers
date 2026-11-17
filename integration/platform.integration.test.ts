@@ -23,7 +23,7 @@ import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 
 import { createWorkersPlatform } from "../src/platform/index.js";
 import { WorkersSocket } from "../src/net/workers-net.js";
-import { MissingConnectError, UnsupportedOnWorkersError } from "../src/errors.js";
+import { MissingConnectError } from "../src/errors.js";
 import type { Socket } from "@browsercore/contracts";
 
 const fromHex = (hex: string): Uint8Array =>
@@ -97,22 +97,35 @@ describe("createWorkersPlatform on real workerd", () => {
         expect(platform.compression.decompress(platform.compression.brotliCompress(body), "br")).toEqual(body);
     });
 
-    it("events + time behave on workerd", () => {
+    it("events + time behave on workerd (canonical Clock)", async () => {
         const platform = createWorkersPlatform();
         const seen: string[] = [];
         platform.events.on("tick", (...args: unknown[]) => seen.push(args.join(" ")));
         expect(platform.events.emit("tick", "on", "workerd")).toBe(true);
         expect(seen).toEqual(["on workerd"]);
-        expect(platform.time.clock.now()).toBeGreaterThan(0);
-        expect(platform.time.clock.monotonic()).toBeGreaterThan(0n);
+        // Canonical Clock (contracts 0.2.6+): wall ms, monotonic ms (number),
+        // sleep, setTimeout(ms, fn)/clearTimeout over workerd's timers — the
+        // boxed numeric token round-trips through clearTimeout on workerd.
+        expect(platform.time.now()).toBeGreaterThan(0);
+        expect(platform.time.monotonic()).toBeGreaterThan(0);
+        let fired = 0;
+        const handle = platform.time.setTimeout(5, () => {
+            fired += 1;
+        });
+        platform.time.clearTimeout(handle);
+        await platform.time.sleep(20);
+        expect(fired).toBe(0);
     });
 
-    it("DNS passthrough + UDP stub keep their contracts on workerd", async () => {
+    it("DNS passthrough + udp ABSENCE keep their contracts on workerd", async () => {
         const platform = createWorkersPlatform();
         await expect(platform.network.dns.lookup("example.com", 4)).resolves.toEqual([
             { address: "example.com", family: 4 },
         ]);
-        await expect(platform.network.udp.recv()).rejects.toThrow(UnsupportedOnWorkersError);
+        // Optional bundles: "no UDP on Workers" is expressed by the field's
+        // absence — no stub, no throwing member.
+        expect("udp" in platform.network).toBe(false);
+        expect(platform.network.udp).toBeUndefined();
         expect(() => platform.network.tcp.connect({ host: "h", port: 1 })).toThrow(MissingConnectError);
     });
 

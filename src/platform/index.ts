@@ -10,12 +10,15 @@
  *
  *   createWorkersPlatform (composition root)
  *     ├── network:  cloudflare:sockets shim (DI'd connect) + edge DNS
- *     │             passthrough + throwing UDP stub (no UDP ⇒ no HTTP/3)
+ *     │             passthrough; udp OMITTED — no UDP on Workers, and
+ *     │             contracts 0.2.6+ express that as absence, not a stub
+ *     │             (no UDP ⇒ no HTTP/3)
  *     ├── crypto:   @noble/* pure-TS provider (WorkersCryptoProvider)
  *     ├── compression: node:zlib sync family (WorkersCompressionProvider)
  *     ├── events:   Map-based EventProvider (WorkersEventProvider)
  *     ├── telemetry: no-op (zero-cost default)
- *     └── time:     Date.now / performance.now / setTimeout (workersTime)
+ *     └── time:     the canonical Clock — now / monotonic(ms) / sleep /
+ *                  setTimeout(ms, fn) / clearTimeout (workersTime)
  *
  * `connect` is injected, not imported: `cloudflare:sockets` is only available
  * inside a Worker, so the Worker passes the real binding and tests pass
@@ -28,6 +31,7 @@
 
 import type {
     Net,
+    Network,
     Platform as ContractPlatform,
     PlatformOptions as ContractPlatformOptions,
 } from "@browsercore/contracts";
@@ -37,7 +41,6 @@ import { workersCompression } from "../compression/workers-compression.js";
 import { workersEventProvider } from "../events/workers-event-provider.js";
 import { createWorkersNet } from "../net/workers-net.js";
 import { workersDns } from "../net/workers-dns.js";
-import { workersUdp } from "../net/workers-udp.js";
 import { noOpTelemetry } from "../telemetry/no-op-telemetry.js";
 import { workersTime } from "../time/workers-time.js";
 import { MissingConnectError } from "../errors.js";
@@ -83,6 +86,17 @@ const missingConnectNet: Net = {
 /**
  * Build a Workers `Platform`.
  *
+ * Since contracts 0.2.6 every Platform bundle is OPTIONAL — a platform
+ * carries exactly the capabilities its runtime has. This adapter provides
+ * every bundle Workers can back (network TCP+DNS, crypto, compression,
+ * events, telemetry, time — an implementation that provides more than a
+ * consumer requires always satisfies the interface) and omits exactly one:
+ * `network.udp`, because Workers has no UDP socket API. "No UDP ⇒ no QUIC ⇒
+ * no HTTP/3" is expressed by the field's ABSENCE, never by a throwing stub —
+ * consumers dereference defensively (`platform.network?.udp`) and raise
+ * their own typed error naming the missing capability, the sanctioned
+ * pattern from `@browsercore/fetch`'s `proxyDialPlatform`.
+ *
  * @param env    The Worker's env bindings (reserved seam — see {@link WorkersEnv}).
  * @param options Override individual adapters; `connect` enables TCP.
  * @returns A fully-assembled Platform for `@browsercore/fetch`.
@@ -106,12 +120,19 @@ export function createWorkersPlatform(
 ): Platform {
     void env; // Reserved bindings seam — documented on WorkersEnv.
     const connect = options?.connect;
+    const udpOverride = options?.network?.udp;
+    const network: Network = {
+        tcp: options?.network?.tcp ?? (connect === undefined ? missingConnectNet : createWorkersNet({ connect })),
+        dns: options?.network?.dns ?? workersDns,
+        // No UDP on Workers: the field stays ABSENT unless a caller injects a
+        // factory (tests, or a future runtime that grows UDP). The conditional
+        // spread — not `udp: options?.network?.udp` — because
+        // exactOptionalPropertyTypes forbids explicitly writing `undefined`
+        // into an optional field.
+        ...(udpOverride === undefined ? {} : { udp: udpOverride }),
+    };
     return {
-        network: {
-            tcp: options?.network?.tcp ?? (connect === undefined ? missingConnectNet : createWorkersNet({ connect })),
-            dns: options?.network?.dns ?? workersDns,
-            udp: options?.network?.udp ?? workersUdp,
-        },
+        network,
         crypto: {
             provider: options?.crypto?.provider ?? workersCryptoProvider,
         },
