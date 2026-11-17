@@ -107,6 +107,12 @@ implements both exactly:
   more under concurrency. Guidance: create the client per request (as the demo does),
   close it in `finally`, set `idleTimeoutMs: 0`, and keep request-level concurrency at or
   below 6; or front concurrent fetches through a queue.
+- **Targets behind Cloudflare's proxy are unreachable via raw sockets.** Workers
+  refuse `connect()` dials to Cloudflare-proxied destinations (loop protection),
+  and the failure comes back fast as a proxy-style `FetchError`. Confirmed
+  against `www.cloudflare.com` and `r.jina.ai` (2026-11-17); non-proxied hosts
+  like `tls.peet.ws` work fine. For Cloudflare-fronted hosts, use the Workers
+  built-in `fetch()` instead of the stack.
 - **No HTTP/3.** No UDP ⇒ no QUIC ⇒ `network.udp` is simply absent from the platform
   (see [Platform semantics](#platform-semantics-contracts--026)). Profiles must not offer
   `h3`/`alt-svc` upgrades on this adapter; HTTP/1.1 and HTTP/2 over TCP are unaffected.
