@@ -44,6 +44,14 @@ export default {
                 status: response.status,
                 headers: { "content-type": "application/json" },
             });
+        } catch (cause) {
+            // Surface upstream failures as JSON instead of an edge 1101 page —
+            // e.g. a malformed ?url= should not look like a Worker crash.
+            const message = cause instanceof Error ? cause.message : String(cause);
+            return new Response(JSON.stringify({ error: message }), {
+                status: 502,
+                headers: { "content-type": "application/json" },
+            });
         } finally {
             await client.close();
         }
