@@ -1,0 +1,63 @@
+{
+    "name": "@browsercore/platform-workers",
+    "version": "0.1.0",
+    "description": "Cloudflare Workers Platform adapter for the @browsercore stack — browser-identical TLS on Workers via pure-noble crypto, a cloudflare:sockets TCP shim, and DI'd connect.",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jverneuer/browsercore-platform-workers.git"
+    },
+    "homepage": "https://github.com/jverneuer/browsercore-platform-workers#readme",
+    "bugs": {
+        "url": "https://github.com/jverneuer/browsercore-platform-workers/issues"
+    },
+    "license": "MIT",
+    "type": "module",
+    "sideEffects": false,
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "bin",
+        "LICENSE",
+        "README.md"
+    ],
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
+    "scripts": {
+        "clean": "rm -rf dist",
+        "build": "tsc -p tsconfig.json",
+        "prepublishOnly": "npm run clean && npm run build",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test": "vitest run",
+        "lint": "oxlint --type-aware src/"
+    },
+    "dependencies": {
+        "@browsercore/contracts": "^0.2.4",
+        "@noble/ciphers": "^2.4.0",
+        "@noble/curves": "^2.4.0",
+        "@noble/hashes": "^2.4.0",
+        "@noble/post-quantum": "^0.7.1"
+    },
+    "devDependencies": {
+        "@browsercore/dev": "0.2.0",
+        "@browsercore/fetch": "^0.2.21",
+        "@types/node": "^26.1.2",
+        "@vitest/coverage-v8": "^4.1.10",
+        "oxlint": "^1.76.0",
+        "oxlint-tsgolint": "7.0.2007",
+        "tsx": "^4.19.2",
+        "typescript": "^7.0.0",
+        "vitest": "^4.1.10"
+    },
+    "engines": {
+        "node": ">=26.0.0"
+    }
+}

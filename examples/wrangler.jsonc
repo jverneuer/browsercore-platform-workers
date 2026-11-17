@@ -1,0 +1,18 @@
+// Wrangler config for examples/demo-worker.ts.
+//
+// Two compat requirements are load-bearing for @browsercore/platform-workers:
+//   1. compat_date >= 2026-08-04 — the date Cloudflare's compatibility notes
+//      mark "All node:crypto APIs fully supported"; the platform's signature
+//      verification and zlib compression ride on nodejs_compat.
+//   2. nodejs_compat — enables the node: builtins above.
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "browsercore-demo-worker",
+    "main": "examples/demo-worker.ts",
+    "compatibility_date": "2026-08-04",
+    "compatibility_flags": ["nodejs_compat"],
+    // Observability helps when chasing the 6-connection cap in development.
+    "observability": {
+        "enabled": true,
+    },
+}
