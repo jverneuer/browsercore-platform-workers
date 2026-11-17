@@ -25,7 +25,6 @@
  */
 
 import {
-    createPublicKey,
     createVerify,
     constants as nodeCryptoConstants,
 } from "node:crypto";
@@ -278,25 +277,35 @@ export class WorkersCryptoProvider implements CryptoProvider {
         // this requires `nodejs_compat` with compat_date >= 2026-08-04
         // (all node:crypto APIs supported); on Node it is native. RSA-PSS
         // salt length MUST equal the digest length (RFC 8017 §8.1.1).
-        const key = createPublicKey({ key: publicKey, format: "der", type: "spki" });
+        //
+        // The SPKI key goes in as raw DER with an explicit format/type —
+        // NOT via `createPublicKey()`: workerd's `Verify.verify()` rejects
+        // `KeyObject` instances in `options.key` (it accepts only
+        // string/binary key material there), while Node accepts both. Raw
+        // DER is the form both runtimes take, and it skips an unnecessary
+        // second SPKI parse on every handshake.
+        // Buffer global (nodejs_compat on workerd, ambient @types/node) keeps
+        // this file under the max-dependencies lint gate.
+        const key = Buffer.from(publicKey);
+        const spki = { key, format: "der" as const, type: "spki" as const };
         switch (scheme) {
             case "ecdsa_secp256r1_sha256":
-                return createVerify("sha256").update(data).verify(key, signature);
+                return createVerify("sha256").update(data).verify(spki, signature);
             case "ecdsa_secp384r1_sha384":
-                return createVerify("sha384").update(data).verify(key, signature);
+                return createVerify("sha384").update(data).verify(spki, signature);
             case "rsa_pss_rsae_sha256":
                 return createVerify("sha256").update(data).verify(
-                    { key, padding: nodeCryptoConstants.RSA_PKCS1_PSS_PADDING, saltLength: 32 },
+                    { ...spki, padding: nodeCryptoConstants.RSA_PKCS1_PSS_PADDING, saltLength: 32 },
                     signature,
                 );
             case "rsa_pss_rsae_sha384":
                 return createVerify("sha384").update(data).verify(
-                    { key, padding: nodeCryptoConstants.RSA_PKCS1_PSS_PADDING, saltLength: 48 },
+                    { ...spki, padding: nodeCryptoConstants.RSA_PKCS1_PSS_PADDING, saltLength: 48 },
                     signature,
                 );
             case "rsa_pkcs1_sha256":
                 return createVerify("sha256").update(data).verify(
-                    { key, padding: nodeCryptoConstants.RSA_PKCS1_PADDING },
+                    { ...spki, padding: nodeCryptoConstants.RSA_PKCS1_PADDING },
                     signature,
                 );
             default:
