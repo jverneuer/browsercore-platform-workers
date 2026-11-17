@@ -16,7 +16,14 @@
  */
 
 export { createWorkersPlatform } from "./platform/index.js";
-export type { Platform, PlatformOptions, WorkersEnv, WorkersPlatformOptions } from "./platform/index.js";
+export type {
+    Platform,
+    PlatformOptions,
+    WorkersEnv,
+    WorkersNetwork,
+    WorkersPlatform,
+    WorkersPlatformOptions,
+} from "./platform/index.js";
 
 export { createWorkersNet, WorkersSocket } from "./net/workers-net.js";
 export type { WorkersNetOptions } from "./net/workers-net.js";
