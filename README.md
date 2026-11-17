@@ -123,7 +123,7 @@ implements both exactly:
   this class of drift: when touching the crypto surface, extend
   `integration/platform.integration.test.ts`, which runs against real workerd.
 - **`compatibility_date >= 2026-08-04` + `nodejs_compat`** are required for `node:crypto`
-  verify and `node:zlib`; both are load-bearing, see `examples/wrangler.jsonc`.
+  verify and `node:zlib`; without them the crypto verify and compression paths break, see `examples/wrangler.jsonc`.
 
 ## Verifying the fingerprint (JA4): recipe
 
