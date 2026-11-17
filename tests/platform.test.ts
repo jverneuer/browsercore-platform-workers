@@ -17,9 +17,17 @@ import { WorkersSocket } from "../src/net/workers-net.js";
 import { MissingConnectError } from "../src/errors.js";
 import { createFakeConnect, createFakeHandle, flush } from "./helpers/fake-connect.js";
 
+// Compile-time conformance: the narrower WorkersPlatform return type must
+// stay assignable to the canonical contracts Platform — it provides every
+// optional bundle, and providing more than a consumer requires always
+// satisfies the interface. Read in the defaults test so the gate's
+// noUnusedLocals keeps the proof alive.
+const asContractPlatform: Platform = createWorkersPlatform();
+
 describe("createWorkersPlatform — defaults", () => {
     it("provides every bundle Workers can back, without any options", () => {
-        const platform: Platform = createWorkersPlatform();
+        const platform = createWorkersPlatform();
+        expect(asContractPlatform).toBeDefined();
         expect(platform.network).toBeDefined();
         expect(platform.crypto.provider).toBeInstanceOf(WorkersCryptoProvider);
         expect(platform.compression).toBeInstanceOf(WorkersCompressionProvider);

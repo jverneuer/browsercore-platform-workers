@@ -30,10 +30,16 @@
  */
 
 import type {
+    Compression,
+    Crypto,
+    DnsResolver,
+    EventProvider,
     Net,
     Network,
     Platform as ContractPlatform,
     PlatformOptions as ContractPlatformOptions,
+    Telemetry,
+    Time,
 } from "@browsercore/contracts";
 
 import { workersCryptoProvider } from "../crypto/workers-crypto-provider.js";
@@ -73,6 +79,44 @@ export interface WorkersPlatformOptions extends PlatformOptions {
     readonly connect?: WorkersConnect;
 }
 
+/**
+ * The network bundle `createWorkersPlatform` always assembles: TCP (the
+ * connect-injected shim, or the {@link MissingConnectError} shim when no
+ * `connect` was injected) and edge DNS passthrough are UNCONDITIONAL, so the
+ * type says so. `udp` stays optional — Workers has no UDP socket API, and
+ * contracts 0.2.6+ express that as the field's absence, never a stub.
+ */
+export interface WorkersNetwork extends Omit<Network, "tcp" | "dns"> {
+    readonly tcp: Net;
+    readonly dns: DnsResolver;
+}
+
+/**
+ * What `createWorkersPlatform` returns — the canonical `Platform` with every
+ * bundle Workers can back REQUIRED. The factory populates network, crypto,
+ * compression, events, telemetry, and time unconditionally; the all-optional
+ * contract shape is the ceiling of what a runtime MAY provide, not a claim
+ * that this one might withhold them, so the signature carries the narrower
+ * truth. Consumers (and the test suite) never re-guard what the type already
+ * proves; `network.udp` remains the sole optional member.
+ *
+ * Assignable to `Platform` in every direction that matters — providing more
+ * than a consumer requires always satisfies the interface — so `fetch` and
+ * every `Platform`-typed seam keep accepting it unchanged.
+ */
+export interface WorkersPlatform
+    extends Omit<
+        ContractPlatform,
+        "network" | "crypto" | "compression" | "events" | "telemetry" | "time"
+    > {
+    readonly network: WorkersNetwork;
+    readonly crypto: Crypto;
+    readonly compression: Compression;
+    readonly events: EventProvider;
+    readonly telemetry: Telemetry;
+    readonly time: Time;
+}
+
 /** `Net` that names the fix the moment TCP is attempted without an injection. */
 const missingConnectNet: Net = {
     connect: (): never => {
@@ -99,7 +143,8 @@ const missingConnectNet: Net = {
  *
  * @param env    The Worker's env bindings (reserved seam — see {@link WorkersEnv}).
  * @param options Override individual adapters; `connect` enables TCP.
- * @returns A fully-assembled Platform for `@browsercore/fetch`.
+ * @returns A fully-assembled {@link WorkersPlatform} (a `Platform` with every
+ *   Workers-backable bundle required) for `@browsercore/fetch`.
  *
  * @example
  * ```ts
@@ -117,11 +162,11 @@ const missingConnectNet: Net = {
 export function createWorkersPlatform(
     env?: WorkersEnv,
     options?: WorkersPlatformOptions,
-): Platform {
+): WorkersPlatform {
     void env; // Reserved bindings seam — documented on WorkersEnv.
     const connect = options?.connect;
     const udpOverride = options?.network?.udp;
-    const network: Network = {
+    const network: WorkersNetwork = {
         tcp: options?.network?.tcp ?? (connect === undefined ? missingConnectNet : createWorkersNet({ connect })),
         dns: options?.network?.dns ?? workersDns,
         // No UDP on Workers: the field stays ABSENT unless a caller injects a

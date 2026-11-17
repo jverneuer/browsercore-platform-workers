@@ -1,0 +1,32 @@
+{
+    // Dual typecheck gate (run by `npm run typecheck`): compiles src/ AND the
+    // tests + workerd integration suite so latent test-only type errors are
+    // enforced by CI, not just by vitest's transpile-only run.
+    //
+    // `exclude` is OVERRIDDEN here on purpose: it is inherited from
+    // ./tsconfig.json, whose exclude list drops "tests" — without this
+    // override the `include` below would match nothing and the gate would
+    // silently typecheck zero test files.
+    //
+    // integration/ is typechecked here even though its RUNTIME suite stays on
+    // the separate vitest.workers.config.ts (workerd binary is a dev-machine
+    // concern): typing it against the same src costs nothing and closes the
+    // gap the test-typecheck audit found.
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "noEmit": true,
+        "declaration": false,
+        "declarationMap": false,
+        "sourceMap": false,
+        "rootDir": "."
+    },
+    "include": [
+        "src/**/*.ts",
+        "tests/**/*.ts",
+        "integration/**/*.test.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
+}

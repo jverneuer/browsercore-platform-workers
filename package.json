@@ -1,6 +1,6 @@
 {
     "name": "@browsercore/platform-workers",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "description": "Cloudflare Workers Platform adapter for the @browsercore stack — browser-identical TLS on Workers via pure-noble crypto, a cloudflare:sockets TCP shim, and DI'd connect.",
     "repository": {
         "type": "git",
@@ -35,7 +35,7 @@
         "clean": "rm -rf dist",
         "build": "tsc -p tsconfig.json",
         "prepublishOnly": "npm run clean && npm run build",
-        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
         "test": "vitest run",
         "lint": "oxlint --type-aware src/"
     },
