@@ -1,9 +1,7 @@
 # @browsercore/platform-workers
 
 [![npm version](https://img.shields.io/npm/v/@browsercore/platform-workers)](https://www.npmjs.com/package/@browsercore/platform-workers)
-[![coverage](https://img.shields.io/endpoint?url=https://jverneuer.github.io/browsercore-platform-workers/badge.json)](https://jverneuer.github.io/browsercore-platform-workers/COVERAGE.md)
 [![CI](https://img.shields.io/github/actions/workflow/status/jverneuer/browsercore-platform-workers/ci.yml?label=ci)](https://github.com/jverneuer/browsercore-platform-workers/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/@browsercore/platform-workers.svg)](LICENSE)
 
 **Cloudflare Workers Platform adapter for the @browsercore stack**: the composition root
 that lets `@browsercore/fetch` run browser-identical TLS (ClientHello, HTTP/2 SETTINGS,
