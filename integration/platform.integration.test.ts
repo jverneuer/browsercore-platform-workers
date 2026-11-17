@@ -13,6 +13,12 @@
 
 import { describe, expect, it } from "vitest";
 
+import {
+    createSign,
+    generateKeyPairSync,
+    constants as nodeCryptoConstants,
+} from "node:crypto";
+
 import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 
 import { createWorkersPlatform } from "../src/platform/index.js";
@@ -53,6 +59,35 @@ describe("createWorkersPlatform on real workerd", () => {
         expect(hybrid.subarray(0, 32)).toEqual(
             platform.crypto.provider.mlkem768Decapsulate(mlkemKp.secretKey, ciphertext),
         );
+    });
+
+    it("verifySignature verifies RSA-PSS/PKCS1 + ECDSA via raw-DER options on workerd", () => {
+        // Regression guard: verify() must receive the SPKI key as raw DER with
+        // an explicit format/type. workerd's `Verify.verify()` rejects
+        // `KeyObject` instances in `options.key` (Node accepts both), which is
+        // exactly how the 0.1.0 release broke every RSA-PSS handshake on the
+        // real platform while the Node-run unit suite stayed green. Keys and
+        // signatures are generated inside workerd, so the whole surface runs
+        // against the runtime a deployed Worker gets.
+        const platform = createWorkersPlatform();
+        const data = fromUtf8("to-be-signed-on-workerd");
+        const tampered = fromUtf8("to-be-signed-TAMPERED");
+        for (const scheme of [
+            "ecdsa_secp256r1_sha256",
+            "ecdsa_secp384r1_sha384",
+            "rsa_pss_rsae_sha256",
+            "rsa_pss_rsae_sha384",
+            "rsa_pkcs1_sha256",
+        ]) {
+            const { publicKey, sign } = schemeFixture(scheme);
+            const signature = sign(data);
+            expect(platform.crypto.provider.verifySignature(scheme, publicKey, signature, data)).toBe(
+                true,
+            );
+            expect(platform.crypto.provider.verifySignature(scheme, publicKey, signature, tampered)).toBe(
+                false,
+            );
+        }
     });
 
     it("zlib compression works through nodejs_compat on workerd", () => {
@@ -99,6 +134,58 @@ describe("createWorkersPlatform on real workerd", () => {
         expect(events).toEqual(["connect", "data:from workerd", "close:false"]);
     });
 });
+
+// ---------------------------------------------------------------------------
+// verifySignature fixture — generates keys + signatures inside workerd via
+// nodejs_compat (mirrors tests/workers-crypto.test.ts's cross-validation).
+// ---------------------------------------------------------------------------
+
+/** Generate an SPKI DER public key + a node:crypto signer for a TLS scheme. */
+function schemeFixture(scheme: string): {
+    publicKey: Uint8Array;
+    sign: (payload: Uint8Array) => Uint8Array;
+} {
+    // Both keys go in as raw DER (SPKI / PKCS#8): workerd's `Sign.sign` and
+    // `Verify.verify` reject `KeyObject` instances inside an *options object*
+    // just like `Verify.verify` does (plain KeyObject args do work today, but
+    // raw DER is the uniformly accepted form).
+    const { publicKey, privateKey } =
+        scheme === "ecdsa_secp256r1_sha256"
+            ? generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+            : scheme === "ecdsa_secp384r1_sha384"
+              ? generateKeyPairSync("ec", { namedCurve: "secp384r1" })
+              : generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const spkiDer = new Uint8Array(publicKey.export({ format: "der", type: "spki" }));
+    const pkcs8Der = privateKey.export({ format: "der", type: "pkcs8" });
+    const [digest, padding, saltLength] = (() => {
+        switch (scheme) {
+            case "ecdsa_secp256r1_sha256":
+                return ["sha256", undefined, undefined] as const;
+            case "ecdsa_secp384r1_sha384":
+                return ["sha384", undefined, undefined] as const;
+            case "rsa_pss_rsae_sha256":
+                return ["sha256", nodeCryptoConstants.RSA_PKCS1_PSS_PADDING, 32] as const;
+            case "rsa_pss_rsae_sha384":
+                return ["sha384", nodeCryptoConstants.RSA_PKCS1_PSS_PADDING, 48] as const;
+            case "rsa_pkcs1_sha256":
+                return ["sha256", nodeCryptoConstants.RSA_PKCS1_PADDING, undefined] as const;
+            default:
+                throw new Error(`no fixture for ${scheme}`);
+        }
+    })();
+    return {
+        publicKey: spkiDer,
+        sign: (payload) =>
+            new Uint8Array(
+                createSign(digest).update(payload).sign({
+                    key: pkcs8Der,
+                    format: "der",
+                    type: "pkcs8",
+                    ...(padding !== undefined ? { padding, saltLength } : {}),
+                }),
+            ),
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Minimal in-memory fake — self-contained (the integration dir does not
