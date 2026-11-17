@@ -116,7 +116,6 @@ export function ensureCryptoError(e: unknown, algorithm?: string): CryptoError {
 /** The set of all Workers-platform-error discriminator values. */
 export type WorkersPlatformErrorKind =
     | "WorkersPlatformError"
-    | "UnsupportedOnWorkersError"
     | "MissingConnectError";
 
 /** Base class for all Workers platform adapter errors. */
@@ -127,33 +126,6 @@ export class WorkersPlatformError extends Error {
     constructor(message: string) {
         super(message);
         this.name = new.target.name;
-    }
-}
-
-/**
- * The requested capability does not exist on Cloudflare Workers.
- *
- * Thrown by capabilities the Workers runtime fundamentally cannot provide
- * (UDP sockets), so the failure names the runtime limitation rather than a
- * generic "not implemented" — callers can distinguish "never possible here"
- * from "not wired up yet".
- */
-export class UnsupportedOnWorkersError extends WorkersPlatformError {
-    public override readonly kind = "UnsupportedOnWorkersError" as const;
-    /** The capability that does not exist on Workers (e.g. `"UDP sockets"`). */
-    public readonly capability: string;
-
-    /**
-     * Create an {@link UnsupportedOnWorkersError}.
-     *
-     * @param capability  The missing capability, e.g. `"UDP sockets"`.
-     * @param consequence What the missing capability rules out, e.g.
-     *                    `"no QUIC, no HTTP/3"` — goes into the message so
-     *                    logs name the impact without the error type.
-     */
-    constructor(capability: string, consequence: string) {
-        super(`${capability} do not exist on Cloudflare Workers — ${consequence}`);
-        this.capability = capability;
     }
 }
 

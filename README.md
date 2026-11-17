@@ -19,10 +19,10 @@ is the one place `node:*` imports are allowed by design — except here there ar
 | signature verify | `node:crypto` compat | RSA-PSS/PKCS1 (and ECDSA) verify needs DER/SPKI + RSA — no noble equivalent. Requires `nodejs_compat` with `compatibility_date >= 2026-08-04` ("All node:crypto APIs fully supported"). |
 | TCP | `cloudflare:sockets` shim | ~180-line `Socket` bridge: sync-return `connect()`, `once("connect")` after `opened`, read pump over `readable`, promise-borne write backpressure (never emits `"drain"`), `end()` = half-close FIN, `destroy()` = `close()` + `"error"`? + `"close"(true)`. **`connect` is dependency-injected** — the Worker passes the real module binding, tests pass in-memory fakes. |
 | DNS | edge passthrough | Workers `connect()` resolves hostnames at the edge; `lookup` passes the name through unchanged. |
-| UDP | throwing stub | **No UDP on Workers ⇒ no QUIC ⇒ no HTTP/3.** `Platform.network.udp` is required by the type, so it throws a typed `UnsupportedOnWorkersError` naming that consequence. |
+| UDP | **absent** | **No UDP on Workers ⇒ no QUIC ⇒ no HTTP/3.** Contracts 0.2.6+ make every Platform bundle optional, so "no UDP" is expressed by omitting `network.udp` entirely — absence, not a throwing stub. Consumers that need it dereference defensively and raise their own typed error naming the capability. |
 | compression | `node:zlib` sync family (compat) | Mirrors browsersmith's Node zlib adapter one-for-one, including the browser-tolerant raw-deflate fallback. |
 | events | Map-based `EventProvider` | The 8-method contracts surface; no `node:events` on workerd. |
-| time | Web standards | `Date.now` / `performance.now` / `setTimeout` / `AbortSignal.timeout`; no `node:timers`. |
+| time | Web standards | The canonical `Clock` (contracts 0.2.6+: `Time ≡ Clock`): `now` (`Date.now`), `monotonic` in ms (`performance.now`), `sleep`, `setTimeout(ms, fn)` / `clearTimeout` over Web `setTimeout` with a boxed opaque `TimerHandle`; no `node:timers`. |
 
 ## Install
 
@@ -75,6 +75,31 @@ the socket shim (`createWorkersNet`) is exercised against the same event semanti
 for crypto/compression-only use; the first `network.tcp.connect()` throws a typed
 `MissingConnectError` naming the fix.
 
+## Platform semantics (contracts ≥ 0.2.6)
+
+Contracts 0.2.6 re-cut the `Platform` interface around two invariants; this adapter
+implements both exactly:
+
+1. **Every bundle is optional.** A platform carries exactly the capabilities its runtime
+   has — the optionality exists so runtimes never have to FAKE capabilities they lack
+   (the pre-0.2.6 required `network.udp` forced UDP-less runtimes to ship a lying stub).
+   `createWorkersPlatform` provides every bundle Workers can back — network TCP+DNS,
+   crypto, compression, events, telemetry, time — which is always valid: an
+   implementation that provides more than a consumer requires satisfies the interface.
+   The single omission is `network.udp`: Workers has no UDP socket API, so the field is
+   **absent** (the key is not on the object at all), never a throwing stub. Consumers
+   follow the sanctioned pattern from `@browsercore/fetch`'s `proxyDialPlatform`:
+   dereference defensively (`platform.network?.udp`) and raise a typed error naming the
+   missing capability if a code path needs it.
+2. **`Time` is the canonical `Clock`.** The old `{ clock, scheduler }` bundle is gone;
+   `Time ≡ Clock = { now, monotonic, sleep, setTimeout(ms, fn), clearTimeout }` with an
+   opaque `TimerHandle`. `workersTime` implements it over Web standards only:
+   `now()` = `Date.now()` (wall epoch ms), `monotonic()` = `performance.now()`
+   (monotonic ms on workerd), `sleep`/`setTimeout`/`clearTimeout` over the global
+   `setTimeout`/`clearTimeout` — with the timer token **boxed**, because workerd returns
+   a numeric id where Node returns a `Timeout` object; the box keeps the handle a
+   genuine opaque object on every runtime.
+
 ## Platform notes (read before deploying)
 
 - **Simultaneous connection limit — 6.** Workers caps simultaneously open `connect()` TCP
@@ -82,7 +107,8 @@ for crypto/compression-only use; the first `network.tcp.connect()` throws a type
   more under concurrency. Guidance: create the client per request (as the demo does),
   close it in `finally`, set `idleTimeoutMs: 0`, and keep request-level concurrency at or
   below 6; or front concurrent fetches through a queue.
-- **No HTTP/3.** No UDP ⇒ no QUIC ⇒ the `udp` stub throws. Profiles must not offer
+- **No HTTP/3.** No UDP ⇒ no QUIC ⇒ `network.udp` is simply absent from the platform
+  (see [Platform semantics](#platform-semantics-contracts--026)). Profiles must not offer
   `h3`/`alt-svc` upgrades on this adapter; HTTP/1.1 and HTTP/2 over TCP are unaffected.
 - **CPU time is paid-plan territory.** A TLS 1.3 handshake + HTTP/2 exchange in pure-TS
   noble crypto burns well past the free plan's 10 ms CPU cap. Run on a paid plan

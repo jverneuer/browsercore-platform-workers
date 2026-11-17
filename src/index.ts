@@ -5,9 +5,11 @@
  * Composes the runtime services (`@browsercore/contracts` `Platform`) a
  * Worker needs to run browser-identical TLS: a pure-noble sync crypto
  * provider, a `cloudflare:sockets` TCP shim (DI'd connect), edge DNS
- * passthrough, a throwing UDP stub (no UDP ⇒ no HTTP/3 on Workers),
- * node:zlib-sync compression, a Map-based event provider, and Web-standard
- * time. See `createWorkersPlatform` for the composition root and
+ * passthrough, node:zlib-sync compression, a Map-based event provider, and
+ * the canonical `Clock` over Web-standard time. `network.udp` is omitted —
+ * contracts 0.2.6+ make every bundle optional, so "no UDP ⇒ no HTTP/3 on
+ * Workers" is expressed by absence, not a throwing stub. See
+ * `createWorkersPlatform` for the composition root and
  * `examples/demo-worker.ts` for a complete Worker.
  *
  * @packageDocumentation
@@ -19,7 +21,6 @@ export type { Platform, PlatformOptions, WorkersEnv, WorkersPlatformOptions } fr
 export { createWorkersNet, WorkersSocket } from "./net/workers-net.js";
 export type { WorkersNetOptions } from "./net/workers-net.js";
 export { workersDns } from "./net/workers-dns.js";
-export { workersUdp } from "./net/workers-udp.js";
 export type {
     SocketEventName,
     WorkersConnect,
@@ -42,7 +43,6 @@ export {
     MissingConnectError,
     UnsupportedAlgorithmError,
     UnsupportedEncodingError,
-    UnsupportedOnWorkersError,
     WorkersPlatformError,
 } from "./errors.js";
 export type { CryptoErrorKind, WorkersPlatformErrorKind } from "./errors.js";

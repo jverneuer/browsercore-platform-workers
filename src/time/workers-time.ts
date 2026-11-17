@@ -1,70 +1,53 @@
 /**
- * `Time` adapter for Cloudflare Workers — Web-standard APIs only, no
- * `node:timers` / `node:perf_hooks`.
+ * `Time` adapter for Cloudflare Workers — the canonical `Clock` contract
+ * (contracts 0.2.6+ collapsed the old `{ clock, scheduler }` bundle into
+ * `Time ≡ Clock`), Web-standard APIs only: no `node:timers` /
+ * `node:perf_hooks`.
  *
- * `Date.now()` for wall time, `performance.now()` (monotonic on workerd)
- * scaled to nanoseconds for `clock.monotonic()`, `setTimeout`/`clearTimeout`
- * for delays, and `AbortSignal.timeout` for cancellation windows — the exact
- * surface the contracts `Time` shape consumes.
+ * `Date.now()` for wall time, `performance.now()` (monotonic on workerd) in
+ * milliseconds for elapsed/deadline math, and `setTimeout`/`clearTimeout`
+ * for `sleep`/`setTimeout`/`clearTimeout`. Timer tokens are BOXED so the
+ * opaque `TimerHandle` is a genuine object on every runtime: workerd's
+ * `setTimeout` hands back a numeric id where Node hands back a `Timeout`
+ * object — the box makes both indistinguishable to callers, exactly the
+ * opacity the contract demands ("treat it as anything more specific and that
+ * is a contract violation").
  *
  * @module
  */
 
-import type { Deadline, Duration, Scheduler, Time } from "@browsercore/contracts";
+import type { TimerHandle, Time } from "@browsercore/contracts";
 
-/** Milliseconds → nanoseconds, as the `Time` contract's monotonic clock speaks ns. */
-const MS_TO_NS = 1_000_000n;
-
-/** The abort reason Workers/Node attach — fall back if it is not an Error. */
-function abortReason(signal: AbortSignal | undefined): Error {
-    return signal?.reason instanceof Error ? signal.reason : new Error("aborted");
+/**
+ * Boxed timer token — {@link TimerHandle} is `object`, and workerd's
+ * `setTimeout` returns a numeric id (only Node's returns an object), so the
+ * raw token is wrapped to keep the handle genuinely opaque on every runtime.
+ */
+interface WorkersTimerHandle {
+    readonly token: number | NodeJS.Timeout;
 }
 
-/** `scheduler.delay` over setTimeout with AbortSignal support. */
-function delay(duration: Duration, signal?: AbortSignal): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-        if (signal === undefined) {
-            setTimeout(() => {
-                resolve();
-            }, duration.milliseconds);
-            return;
-        }
-        if (signal.aborted) {
-            reject(abortReason(signal));
-            return;
-        }
-        const onAbort = (): void => {
-            clearTimeout(timer);
-            reject(abortReason(signal));
-        };
-        const timer = setTimeout(() => {
-            signal.removeEventListener("abort", onAbort);
-            resolve();
-        }, duration.milliseconds);
-        signal.addEventListener("abort", onAbort, { once: true });
-    });
-}
-
-/** Build the scheduler once — pure functions over Web-standard timers. */
-const workersScheduler: Scheduler = {
-    delay,
-    timeout: (duration: Duration): AbortSignal => AbortSignal.timeout(duration.milliseconds),
-    deadline: (duration: Duration): Deadline => ({
-        signal: AbortSignal.timeout(duration.milliseconds),
-        expiresAt: workersMonotonic() + BigInt(duration.milliseconds) * MS_TO_NS,
-    }),
-};
-
-/** Monotonic nanoseconds from `performance.now()` — never goes backwards. */
-function workersMonotonic(): bigint {
-    return BigInt(Math.round(performance.now() * 1_000_000));
-}
-
-/** Workers `Time` bundle — composed into the Platform. */
+/** Workers `Time` bundle — the canonical `Clock`, composed into the Platform. */
 export const workersTime: Time = {
-    clock: {
-        now: () => Date.now(),
-        monotonic: workersMonotonic,
+    /** Wall-clock epoch ms — `Date.now()`-comparable, may jump (NTP). */
+    now: (): number => Date.now(),
+
+    /** Monotonic ms from `performance.now()` — never goes backwards. */
+    monotonic: (): number => performance.now(),
+
+    /** Resolve after `ms` milliseconds — the bare `setTimeout`-as-sleep replacement. */
+    sleep: (ms: number): Promise<void> =>
+        new Promise<void>((resolve) => {
+            setTimeout(resolve, ms);
+        }),
+
+    /** Run `fn` once after `ms` milliseconds; cancel via {@link clearTimeout}. */
+    setTimeout: (ms: number, fn: () => void): TimerHandle => ({
+        token: setTimeout(fn, ms),
+    }),
+
+    /** Cancel a pending timer obtained from {@link setTimeout}. */
+    clearTimeout: (handle: TimerHandle): void => {
+        clearTimeout((handle as WorkersTimerHandle).token);
     },
-    scheduler: workersScheduler,
 };
