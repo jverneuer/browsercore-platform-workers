@@ -84,8 +84,16 @@ for crypto/compression-only use; the first `network.tcp.connect()` throws a type
   `h3`/`alt-svc` upgrades on this adapter; HTTP/1.1 and HTTP/2 over TCP are unaffected.
 - **CPU time is paid-plan territory.** A TLS 1.3 handshake + HTTP/2 exchange in pure-TS
   noble crypto burns well past the free plan's 10 ms CPU cap. Run on a paid plan
-  (Bundled/Standard with higher CPU limits) — this is a PoC measured against Workers'
-  paid tier, not the free tier.
+  (Bundled/Standard with higher CPU limits) — the PoC was measured against Workers'
+  paid tier, not the free tier. (Observed 2026-11-17: single handshakes *did* complete
+  on a free-plan deploy — Cloudflare's free-tier CPU enforcement is bursty — but treat
+  free deploys as smoke tests, not throughput evidence.)
+- **workerd's `node:crypto` rejects `KeyObject` in `Verify.verify()`/`Sign.sign()`
+  options objects** (Node accepts both). The provider therefore feeds raw DER with
+  `format`/`type` — the one form both runtimes accept (fixed in 0.1.1; see
+  `WorkersCryptoProvider.verifySignature`). Unit tests run on Node and cannot catch
+  this class of drift: when touching the crypto surface, extend
+  `integration/platform.integration.test.ts`, which runs against real workerd.
 - **`compatibility_date >= 2026-08-04` + `nodejs_compat`** are required for `node:crypto`
   verify and `node:zlib`; both are load-bearing, see `examples/wrangler.jsonc`.
 
@@ -95,8 +103,16 @@ The unit suite proves the adapter's primitives (vectors) but not the wire; the l
 gate needs a real deploy and is intentionally **out of scope for CI here**. Verify
 manually, exactly like `@browsercore/crawlee`'s live gate:
 
-1. Deploy the demo worker (`npx wrangler deploy` from a project holding
-   `examples/wrangler.jsonc` + `examples/demo-worker.ts`).
+1. Deploy the demo worker — wrangler resolves config paths relative to the config
+   file's directory, so point at the config explicitly:
+
+   ```bash
+   npx wrangler deploy -c examples/wrangler.jsonc   # from the repo root
+   ```
+
+   **Rebuild first:** the demo bundles the package's built `dist/` (package-exports
+   self-reference), not `src/` — run `npm run build` after editing the provider, or
+   the change silently doesn't ship.
 2. `curl -s "https://<your-worker>.<account>.workers.dev/?url=https://tls.peet.ws/api/all"`
    — the demo fetches the peet.ws echo oracle **through the @browsercore stack** and
    returns its JSON.
@@ -107,6 +123,15 @@ manually, exactly like `@browsercore/crawlee`'s live gate:
    - `http2.akamai_fingerprint` must equal
      **`1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p`**.
 4. Any drift means the wire is no longer browser-identical — treat it as a regression.
+
+**First live gate — 2026-11-17 (v0.1.1, real deployed Worker): PASS.** JA4 and
+`akamai_fingerprint` exact-golden-matched across 5 fetches (`tls.peet.ws` ×4,
+`tls.browserleaks.com` ×1), h2 negotiated, ~0.9–1.3 s wall per fetch. A same-day
+real-world probe (Airbnb Türkiye search through the stack) hit **no challenge** where
+plain-curl TLS was served a mismatched cached page — evidence Airbnb's edge
+distinguishes fingerprints at the TLS/H2 layer. Note Airbnb listings hydrate
+client-side (niobe GraphQL), so a raw HTML fetch of such SPA search pages returns
+the shell without results regardless of fingerprint.
 
 ## Development
 
@@ -119,8 +144,9 @@ npm run build
 ```
 
 Integration test against real workerd (not run in CI — needs the workerd binary;
-verified locally with workerd 2026-08-15 + `nodejs_compat`, 5/5 green — the suite
-proves the package loads and every adapter behaves inside actual workerd):
+verified locally with workerd 2026-08-15 + `nodejs_compat`, 6/6 green — the suite
+proves the package loads and every adapter behaves inside actual workerd, including
+`verifySignature` across all five TLS schemes with keys generated inside workerd):
 
 ```bash
 npm install --no-save @cloudflare/vitest-pool-workers   # deprecated → @cloudflare/vitest-plugin, still works
